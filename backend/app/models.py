@@ -287,6 +287,12 @@ class SpendingPatternStats(Base):
     last_txn_days_ago = Column(Integer)
     
     # Soft metadata (derived, not identity)
+    dominant_level_1_tag = Column(String(50))
+    level_1_confidence = Column(Float)
+    
+    dominant_level_2_tag = Column(String(50))
+    level_2_confidence = Column(Float)
+    
     dominant_level_3_tag = Column(String(50))
     level_3_confidence = Column(Float)
     

@@ -566,6 +566,28 @@ class PatternAggregator:
         amount_min = min(amounts) if amounts else 0.0
         amount_max = max(amounts) if amounts else 0.0
         
+        # Level-1 tag distribution
+        level_1_tags = [txn.get('level_1_tag', 'UNKNOWN') for txn in sorted_group]
+        level_1_counts = {}
+        for tag in level_1_tags:
+            level_1_counts[tag] = level_1_counts.get(tag, 0) + 1
+        
+        dominant_level_1_tag = 'UNKNOWN'
+        if level_1_counts:
+            dominant_level_1_tag = max(level_1_counts, key=level_1_counts.get)
+        level_1_confidence = (level_1_counts.get(dominant_level_1_tag, 0) / txn_count) if txn_count > 0 else 0.0
+        
+        # Level-2 tag distribution
+        level_2_tags = [txn.get('level_2_tag', 'UNKNOWN') for txn in sorted_group]
+        level_2_counts = {}
+        for tag in level_2_tags:
+            level_2_counts[tag] = level_2_counts.get(tag, 0) + 1
+        
+        dominant_level_2_tag = 'UNKNOWN'
+        if level_2_counts:
+            dominant_level_2_tag = max(level_2_counts, key=level_2_counts.get)
+        level_2_confidence = (level_2_counts.get(dominant_level_2_tag, 0) / txn_count) if txn_count > 0 else 0.0
+        
         # Level-3 tag distribution
         level_3_tags = [txn.get('level_3_tag', 'UNKNOWN') for txn in sorted_group]
         level_3_counts = {}
@@ -601,6 +623,10 @@ class PatternAggregator:
             "last_txn_days_ago": last_txn_days_ago,
             
             # Soft metadata
+            "dominant_level_1_tag": dominant_level_1_tag,
+            "level_1_confidence": round(level_1_confidence, 4),
+            "dominant_level_2_tag": dominant_level_2_tag,
+            "level_2_confidence": round(level_2_confidence, 4),
             "dominant_level_3_tag": dominant_level_3_tag,
             "level_3_confidence": round(level_3_confidence, 4),
         }
@@ -682,7 +708,41 @@ class TransactionPersistence:
         
         try:
             count = 0
+            duplicates_skipped = 0
+            
             for txn in transactions:
+                # Check for duplicates before inserting
+                # A duplicate is defined as: same user_id, date, narration, and amount
+                # IMPORTANT: Must handle NULL amounts correctly (NULL == NULL is NULL in SQL, not TRUE)
+                withdrawal_amt = txn.get('withdrawal_amount')
+                deposit_amt = txn.get('deposit_amount')
+                
+                query = db.query(Transaction).filter(
+                    Transaction.user_id == user_id,
+                    Transaction.txn_date == txn['txn_date'],
+                    Transaction.narration == txn['narration']
+                )
+                
+                # Handle NULL comparison properly for withdrawal_amount
+                if withdrawal_amt is None:
+                    query = query.filter(Transaction.withdrawal_amount.is_(None))
+                else:
+                    query = query.filter(Transaction.withdrawal_amount == withdrawal_amt)
+                
+                # Handle NULL comparison properly for deposit_amount
+                if deposit_amt is None:
+                    query = query.filter(Transaction.deposit_amount.is_(None))
+                else:
+                    query = query.filter(Transaction.deposit_amount == deposit_amt)
+                
+                existing_txn = query.first()
+                
+                if existing_txn:
+                    # Skip duplicate
+                    duplicates_skipped += 1
+                    logger.debug(f"Skipped duplicate transaction: {txn['narration']} on {txn['txn_date']}")
+                    continue
+                
                 transaction = Transaction(
                     user_id=user_id,
                     # Core transaction facts
@@ -704,7 +764,7 @@ class TransactionPersistence:
                 count += 1
             
             db.commit()
-            logger.info(f"Persisted {count} enriched transactions for user {user_id}")
+            logger.info(f"Persisted {count} enriched transactions for user {user_id} (skipped {duplicates_skipped} duplicates)")
             return count
             
         except Exception as e:
@@ -761,6 +821,10 @@ class TransactionPersistence:
                         existing.gap_min_days = stats['gap_min_days']
                         existing.gap_max_days = stats['gap_max_days']
                         existing.last_txn_days_ago = stats['last_txn_days_ago']
+                        existing.dominant_level_1_tag = stats['dominant_level_1_tag']
+                        existing.level_1_confidence = stats['level_1_confidence']
+                        existing.dominant_level_2_tag = stats['dominant_level_2_tag']
+                        existing.level_2_confidence = stats['level_2_confidence']
                         existing.dominant_level_3_tag = stats['dominant_level_3_tag']
                         existing.level_3_confidence = stats['level_3_confidence']
                         existing.updated_at = datetime.utcnow()
@@ -783,6 +847,10 @@ class TransactionPersistence:
                             gap_min_days=stats['gap_min_days'],
                             gap_max_days=stats['gap_max_days'],
                             last_txn_days_ago=stats['last_txn_days_ago'],
+                            dominant_level_1_tag=stats['dominant_level_1_tag'],
+                            level_1_confidence=stats['level_1_confidence'],
+                            dominant_level_2_tag=stats['dominant_level_2_tag'],
+                            level_2_confidence=stats['level_2_confidence'],
                             dominant_level_3_tag=stats['dominant_level_3_tag'],
                             level_3_confidence=stats['level_3_confidence']
                         )

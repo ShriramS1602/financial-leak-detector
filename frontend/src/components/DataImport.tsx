@@ -109,7 +109,7 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
                         <p className="text-slate-400">This might take a moment.</p>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
                         {/* CSV Upload Option */}
                         <div
                             className={cn(
@@ -169,8 +169,8 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
                             )}
                         </div>
 
-                        {/* Email Sync Option */}
-                        <div
+                        {/* Email Sync Option - COMMENTED OUT */}
+                        {/* <div
                             className={cn(
                                 "relative p-6 rounded-xl border-2 transition-all cursor-pointer",
                                 selectedMethod === 'email'
@@ -197,7 +197,6 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
 
                                     {selectedMethod === 'email' && (
                                         <div className="space-y-4">
-                                            {/* Date Range Selector */}
                                             <div className="space-y-2">
                                                 <label className="flex items-center gap-2 text-sm text-slate-300 font-medium">
                                                     <Calendar className="w-4 h-4" />
@@ -244,7 +243,7 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
                                     <CheckCircle className="w-5 h-5 text-accent" />
                                 </div>
                             )}
-                        </div>
+                        </div> */}
                     </div>
                 )}
             </div>

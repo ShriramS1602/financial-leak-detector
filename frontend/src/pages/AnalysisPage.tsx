@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api, authService } from '@/services/api';
-import { LogOut, User as UserIcon } from 'lucide-react';
+import { LogOut, User as UserIcon, Zap } from 'lucide-react';
 import type { DateRangeOption } from '@/components/DataImport';
 import { Dashboard } from '@/components/Dashboard';
-import { ShieldAlert, Lock } from 'lucide-react';
+import { ShieldAlert, Lock, CheckCircle2 } from 'lucide-react';
 import { DataImport } from '@/components/DataImport';
 
 export default function App() {
     const [data, setData] = useState<any>(null);
+    const [uploadedData, setUploadedData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [showPasswordInput, setShowPasswordInput] = useState(false);
     const [fileToRetry, setFileToRetry] = useState<File | null>(null);
@@ -21,12 +22,43 @@ export default function App() {
         const fetchUser = async () => {
             try {
                 const user = await authService.getCurrentUser();
-                setUserName(user.name || user.email.split('@')[0]);
+                setUserName(user.username || user.email.split('@')[0]);
             } catch (error) {
                 console.error("Failed to fetch user", error);
             }
         };
         fetchUser();
+    }, []);
+
+    // Fetch latest analysis on mount to restore dashboard on refresh
+    useEffect(() => {
+        const fetchLatestAnalysis = async () => {
+            try {
+                const token = localStorage.getItem('auth_token');
+                if (!token) return;
+
+                const response = await fetch('http://localhost:8000/api/leaks/latest', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    // Only set data if leaks exist
+                    if (result.leaks && result.leaks.length > 0) {
+                        setData(result);
+                        console.log('Latest analysis restored:', result);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch latest analysis:", error);
+            }
+        };
+
+        fetchLatestAnalysis();
     }, []);
 
     const handleLogout = async () => {
@@ -113,8 +145,16 @@ export default function App() {
         }
 
         try {
-            const response = await fetch('http://localhost:8000/analyze', {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                throw new Error('Not authenticated. Please login again.');
+            }
+
+            const response = await fetch('http://localhost:8000/api/transactions/upload', {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                },
                 body: formData,
             });
 
@@ -127,18 +167,60 @@ export default function App() {
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => null);
+                console.error('Upload error response:', response.status, errorData);
                 throw new Error(errorData?.detail || `Error: ${response.statusText}`);
             }
 
             const result = await response.json();
-            console.log(result);
-            setData(result);
+            console.log('Upload successful:', result);
+            
+            // Store upload data but don't analyze yet
+            setUploadedData(result);
             setShowPasswordInput(false);
             setFileToRetry(null);
             setPassword("");
         } catch (error) {
             console.error("Error uploading file:", error);
-            alert(error instanceof Error ? error.message : "Failed to analyze file. Ensure backend is running.");
+            alert(error instanceof Error ? error.message : "Failed to upload file. Ensure backend is running.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const analyzeForLeaks = async () => {
+        setLoading(true);
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                throw new Error('Not authenticated. Please login again.');
+            }
+
+            const response = await fetch('http://localhost:8000/api/leaks/analyze', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                console.error('Analyze error response:', response.status, errorData);
+                throw new Error(errorData?.detail || `Error: ${response.statusText}`);
+            }
+
+            const result = await response.json();
+            console.log('Analysis successful:', result);
+            
+            // Combine upload data with analysis results
+            setData({
+                ...uploadedData,
+                ...result
+            });
+        } catch (error) {
+            console.error("Error analyzing file:", error);
+            alert(error instanceof Error ? error.message : "Failed to analyze file. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -233,7 +315,7 @@ export default function App() {
 
                 {/* content */}
                 <main className="transition-all duration-500">
-                    {!data ? (
+                    {!data && !uploadedData ? (
                         <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in slide-in-from-bottom-4 duration-700">
                             <div className="text-center mb-10 space-y-4">
                                 <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-white mb-6">
@@ -252,9 +334,74 @@ export default function App() {
                                 isGoogleConfigured={true}
                             />
                         </div>
-                    ) : (
-                        <Dashboard data={data} onReset={() => setData(null)} />
-                    )}
+                    ) : uploadedData && !data ? (
+                        <div className="flex flex-col items-center justify-center min-h-[60vh] animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-8 md:p-12 border border-white/20 max-w-md w-full space-y-6">
+                                {/* Success Icon */}
+                                <div className="flex justify-center">
+                                    <div className="p-4 bg-green-500/20 rounded-full">
+                                        <CheckCircle2 className="w-12 h-12 text-green-400" />
+                                    </div>
+                                </div>
+
+                                {/* Success Message */}
+                                <div className="text-center space-y-2">
+                                    <h3 className="text-2xl font-bold text-white">File Uploaded Successfully! ✨</h3>
+                                    <p className="text-slate-400 text-sm">
+                                        {uploadedData.statistics?.transactions_stored || 0} transactions found and processed
+                                    </p>
+                                </div>
+
+                                {/* Stats Preview */}
+                                <div className="bg-white/5 rounded-xl p-4 space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 text-sm">Patterns Detected:</span>
+                                        <span className="text-white font-semibold">{uploadedData.statistics?.pattern_stats_stored || 0}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-400 text-sm">Invalid Rows:</span>
+                                        <span className="text-white font-semibold">{uploadedData.statistics?.invalid_rows || 0}</span>
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-3 pt-4">
+                                    <button
+                                        onClick={() => {
+                                            setUploadedData(null);
+                                        }}
+                                        className="flex-1 py-2.5 px-4 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors"
+                                        disabled={loading}
+                                    >
+                                        Upload Different File
+                                    </button>
+                                    <button
+                                        onClick={analyzeForLeaks}
+                                        disabled={loading}
+                                        className="flex-1 py-2.5 px-4 bg-gradient-to-r from-primary to-accent hover:from-primary/90 hover:to-accent/90 text-white rounded-lg font-medium transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                                    >
+                                        {loading ? (
+                                            <>
+                                                <span className="animate-spin">⏳</span>
+                                                Analyzing...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Zap className="w-4 h-4" />
+                                                Detect Leaks
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                <p className="text-xs text-slate-500 text-center">
+                                    Click "Detect Leaks" to analyze spending patterns and find hidden subscriptions
+                                </p>
+                            </div>
+                        </div>
+                    ) : data ? (
+                        <Dashboard data={data} onReset={() => { setData(null); setUploadedData(null); }} />
+                    ) : null}
                 </main>
             </div>
         </div>

@@ -297,7 +297,7 @@ except ValueError as e:
     leak_analyzer = None
 
 
-@router.post("/analyze", response_model=LeakAnalysisResponseSchema)
+@router.post("/analyze")
 async def analyze_for_leaks(
     request: Request,
     db: Session = Depends(get_db)
@@ -396,7 +396,45 @@ async def analyze_for_leaks(
         
         logger.info(f"Stored/updated {len(analysis_result.leaks)} leak insights for user {current_user.id}")
         
-        return analysis_result
+        # Get statistics for response (total spend, transaction count from patterns)
+        pattern_stats = db.query(SpendingPatternStats).filter(
+            SpendingPatternStats.user_id == current_user.id
+        ).all()
+        
+        # Create a map of pattern_id to pattern stats for easy lookup
+        pattern_stats_map = {p.id: p for p in pattern_stats}
+        
+        # Enhance leak response with pattern statistics
+        leaks_with_stats = []
+        for leak in analysis_result.leaks:
+            leak_dict = leak.model_dump()
+            pattern = pattern_stats_map.get(leak.pattern_id)
+            
+            if pattern:
+                leak_dict['transaction_count'] = pattern.txn_count
+                leak_dict['total_spent'] = pattern.total_amount
+                leak_dict['avg_per_transaction'] = pattern.avg_amount
+                leak_dict['active_duration_days'] = pattern.active_duration_days
+                leak_dict['avg_frequency_days'] = pattern.avg_gap_days
+                leak_dict['last_transaction_days_ago'] = pattern.last_txn_days_ago
+                leak_dict['dominant_level_1_tag'] = pattern.dominant_level_1_tag
+                leak_dict['dominant_level_2_tag'] = pattern.dominant_level_2_tag
+            
+            leaks_with_stats.append(leak_dict)
+        
+        statistics = {
+            "total_spend": sum(p.total_amount for p in pattern_stats),
+            "transaction_count": sum(p.txn_count for p in pattern_stats),
+            "transactions_stored": sum(p.txn_count for p in pattern_stats),
+            "pattern_stats_stored": len(pattern_stats),
+        }
+        
+        # Return analysis with statistics included
+        response_dict = analysis_result.model_dump()
+        response_dict['leaks'] = leaks_with_stats
+        response_dict['statistics'] = statistics
+        
+        return response_dict
         
     except ValueError as e:
         logger.error(f"Validation error: {str(e)}")
@@ -409,6 +447,87 @@ async def analyze_for_leaks(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI analysis service temporarily unavailable. All fallback models failed. Please try again later."
+        )
+
+
+@router.get("/latest")
+async def get_latest_analysis(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the latest leak analysis for the current user
+    Combines leak insights with statistics for dashboard restoration on page refresh
+    
+    Returns:
+        Object with leaks array and statistics for dashboard display
+    """
+    current_user: User = get_current_user_from_token(request, db)
+    
+    try:
+        # Get all unresolved leaks ordered by timestamp (most recent first)
+        leaks = db.query(LeakInsight).filter(
+            LeakInsight.user_id == current_user.id,
+            LeakInsight.is_resolved == False
+        ).order_by(LeakInsight.analysis_timestamp.desc()).all()
+        
+        if not leaks:
+            return {"leaks": [], "statistics": {}, "total_estimated_annual_saving": 0}
+        
+        # Get statistics from spending patterns
+        pattern_stats = db.query(SpendingPatternStats).filter(
+            SpendingPatternStats.user_id == current_user.id
+        ).all()
+        
+        statistics = {
+            "total_spend": sum(p.total_amount for p in pattern_stats),
+            "transaction_count": sum(p.txn_count for p in pattern_stats),
+            "transactions_stored": sum(p.txn_count for p in pattern_stats),
+            "pattern_stats_stored": len(pattern_stats),
+        }
+        
+        total_saving = sum(l.estimated_annual_saving for l in leaks)
+        
+        # Create a map of pattern_id to pattern stats for easy lookup
+        pattern_stats_map = {p.id: p for p in pattern_stats}
+        
+        # Format leaks for frontend with stats
+        leaks_data = [
+            {
+                "id": leak.id,
+                "pattern_id": leak.pattern_id,
+                "merchant_hint": pattern_stats_map.get(leak.pattern_id).merchant_hint if leak.pattern_id in pattern_stats_map else "Unknown",
+                "leak_category": leak.leak_category,
+                "leak_probability": leak.leak_probability,
+                "reasoning": leak.reasoning,
+                "actionable_step": leak.actionable_step,
+                "estimated_annual_saving": leak.estimated_annual_saving,
+                "analysis_timestamp": leak.analysis_timestamp.isoformat(),
+                "is_resolved": leak.is_resolved,
+                # Add stats from pattern
+                "transaction_count": pattern_stats_map.get(leak.pattern_id).txn_count if leak.pattern_id in pattern_stats_map else 0,
+                "total_spent": pattern_stats_map.get(leak.pattern_id).total_amount if leak.pattern_id in pattern_stats_map else 0,
+                "avg_per_transaction": pattern_stats_map.get(leak.pattern_id).avg_amount if leak.pattern_id in pattern_stats_map else 0,
+                "active_duration_days": pattern_stats_map.get(leak.pattern_id).active_duration_days if leak.pattern_id in pattern_stats_map else 0,
+                "avg_frequency_days": pattern_stats_map.get(leak.pattern_id).avg_gap_days if leak.pattern_id in pattern_stats_map else 0,
+                "last_transaction_days_ago": pattern_stats_map.get(leak.pattern_id).last_txn_days_ago if leak.pattern_id in pattern_stats_map else 0,
+                "dominant_level_1_tag": pattern_stats_map.get(leak.pattern_id).dominant_level_1_tag if leak.pattern_id in pattern_stats_map else None,
+                "dominant_level_2_tag": pattern_stats_map.get(leak.pattern_id).dominant_level_2_tag if leak.pattern_id in pattern_stats_map else None,
+            }
+            for leak in leaks
+        ]
+        
+        return {
+            "leaks": leaks_data,
+            "statistics": statistics,
+            "total_estimated_annual_saving": total_saving,
+        }
+        
+    except Exception as e:
+        logger.error(f"Error retrieving latest analysis: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve latest analysis"
         )
 
 
