@@ -53,6 +53,13 @@ export function Dashboard({ data, onReset }: DashboardProps) {
         }
     };
 
+    // Calculate confidence distribution
+    const confidenceDistribution = {
+        high: leaks.filter((l: any) => (l.leak_probability || 0) > 0.7).length,
+        medium: leaks.filter((l: any) => (l.leak_probability || 0) >= 0.4 && (l.leak_probability || 0) <= 0.7).length,
+        low: leaks.filter((l: any) => (l.leak_probability || 0) < 0.4).length,
+    };
+
     // Toggle card expansion
     const toggleCardExpansion = (index: number) => {
         const newExpanded = new Set(expandedCards);
@@ -206,6 +213,77 @@ export function Dashboard({ data, onReset }: DashboardProps) {
                 </div>
             )}
 
+            {/* Confidence Distribution */}
+            {leaks.length > 0 && (
+                <div className="bg-surface/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6">
+                    <h3 className="text-xl font-bold text-slate-200 mb-6 flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-primary" />
+                        Leak Detection Confidence
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* High Confidence */}
+                        <div className="bg-slate-800/50 rounded-xl border border-emerald-500/30 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-emerald-400 font-semibold">High Confidence</span>
+                                <span className="text-2xl font-bold text-emerald-400">{confidenceDistribution.high}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-emerald-500" 
+                                        style={{ width: `${leaks.length > 0 ? (confidenceDistribution.high / leaks.length) * 100 : 0}%` }}
+                                    />
+                                </div>
+                                <span className="text-sm text-slate-400 min-w-fit">
+                                    {leaks.length > 0 ? ((confidenceDistribution.high / leaks.length) * 100).toFixed(0) : 0}%
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">Probability &gt; 0.7</p>
+                        </div>
+
+                        {/* Medium Confidence */}
+                        <div className="bg-slate-800/50 rounded-xl border border-amber-500/30 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-amber-400 font-semibold">Medium Confidence</span>
+                                <span className="text-2xl font-bold text-amber-400">{confidenceDistribution.medium}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-amber-500" 
+                                        style={{ width: `${leaks.length > 0 ? (confidenceDistribution.medium / leaks.length) * 100 : 0}%` }}
+                                    />
+                                </div>
+                                <span className="text-sm text-slate-400 min-w-fit">
+                                    {leaks.length > 0 ? ((confidenceDistribution.medium / leaks.length) * 100).toFixed(0) : 0}%
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">Probability 0.4 - 0.7</p>
+                        </div>
+
+                        {/* Low Confidence */}
+                        <div className="bg-slate-800/50 rounded-xl border border-red-500/30 p-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-red-400 font-semibold">Low Confidence</span>
+                                <span className="text-2xl font-bold text-red-400">{confidenceDistribution.low}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-red-500" 
+                                        style={{ width: `${leaks.length > 0 ? (confidenceDistribution.low / leaks.length) * 100 : 0}%` }}
+                                    />
+                                </div>
+                                <span className="text-sm text-slate-400 min-w-fit">
+                                    {leaks.length > 0 ? ((confidenceDistribution.low / leaks.length) * 100).toFixed(0) : 0}%
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">Probability &lt; 0.4</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Detected Leaks - Full Width with Scroll */}
             <div className="bg-surface/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6">
                 <h3 className="text-xl font-bold text-slate-200 mb-6 flex items-center gap-2">
@@ -263,7 +341,7 @@ export function Dashboard({ data, onReset }: DashboardProps) {
                             {leaks.length === 0 ? "No leaks detected! Great job." : "No leaks in selected categories."}
                         </div>
                     ) : (
-                        filteredLeaks.map((leak: any, i: number) => {
+                        [...filteredLeaks].sort((a: any, b: any) => (b.leak_probability || 0) - (a.leak_probability || 0)).map((leak: any, i: number) => {
                             const isExpanded = expandedCards.has(i);
                             return (
                                 <div key={i} className="bg-slate-800/50 rounded-xl border border-slate-700 hover:border-danger/30 transition-colors overflow-hidden">

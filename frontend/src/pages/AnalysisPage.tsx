@@ -22,7 +22,9 @@ export default function App() {
         const fetchUser = async () => {
             try {
                 const user = await authService.getCurrentUser();
-                setUserName(user.username || user.email.split('@')[0]);
+                // Use username if available, otherwise extract from email
+                const displayName = (user as any).username || user.email?.split('@')[0] || 'User';
+                setUserName(displayName);
             } catch (error) {
                 console.error("Failed to fetch user", error);
             }
@@ -136,10 +138,13 @@ export default function App() {
         }
     };
 
-    const handleUpload = async (file: File, filePassword?: string) => {
+    const handleUpload = async (file: File, columnMapping?: Record<string, string>, filePassword?: string) => {
         setLoading(true);
         const formData = new FormData();
         formData.append('file', file);
+        if (columnMapping) {
+            formData.append('column_mapping', JSON.stringify(columnMapping));
+        }
         if (filePassword) {
             formData.append('password', filePassword);
         }
@@ -229,7 +234,7 @@ export default function App() {
     const handlePasswordSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (fileToRetry && password) {
-            handleUpload(fileToRetry, password);
+            handleUpload(fileToRetry, undefined, password);
         }
     };
 

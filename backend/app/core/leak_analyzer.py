@@ -114,7 +114,9 @@ class LeakAnalyzer:
             patterns_data.append({
                 "id": pattern['id'],
                 "merchant": pattern['merchant_hint'],
-                "level_3_category": pattern['dominant_level_3_tag'],
+                "payment_rail": pattern['dominant_level_1_tag'],
+                "transaction_type": pattern['dominant_level_2_tag'],
+                "spending_category": pattern['dominant_level_3_tag'],
                 "category_confidence": float(pattern['level_3_confidence']) if pattern['level_3_confidence'] else 0.0,
                 
                 # Aggregated evidence (FACTS ONLY)
@@ -190,8 +192,15 @@ IMPORTANT CONSTRAINTS:
 - Avoid alarmist language; be balanced and fair
 - Be conservative with savings estimates
 
+TAG MEANINGS:
+- Payment Rail (Level 1): How money moves - SALARY, UPI, CARD, CASH, NEFT, RTGS, CHEQUE, IMPS, FT, BANK_TRANSFER, ATM, POS
+- Transaction Type (Level 2): Nature of transaction - INCOME, EXPENSE, TRANSFER, ADJUSTMENT, UNKNOWN
+- Spending Category (Level 3): Type of expense - OTT, FOOD, FUEL, TRANSPORT, RETAIL, HEALTH_FITNESS, UTILITIES
+
 REASONING FRAMEWORK:
 Consider these factors when assessing if a pattern is a leak:
+- Transaction Type: INCOME is not a leak, EXPENSE/TRANSFER need scrutiny, ADJUSTMENT requires context
+- Payment Rail: Regular salary via NEFT is different from card micro-payments
 - Frequency: How often does this spending occur?
 - Predictability: Is the gap between transactions consistent?
 - Recency: How recent is the last transaction?
@@ -200,10 +209,12 @@ Consider these factors when assessing if a pattern is a leak:
 - Necessity: Is this essential spending or discretionary?
 
 A strong leak signal:
+- EXPENSE type transactions only (INCOME/TRANSFER are not leaks)
 - Regular, predictable frequency (low gap variance)
 - Discretionary category (OTT, FOOD, RETAIL vs UTILITIES)
 - User might not be consciously tracking it
-- Cancelable without immediate hardship"""
+- Cancelable without immediate hardship
+- Multiple small transactions adding up (low per-transaction amount, high frequency)"""
 
         # Create prompt for AI analysis
         user_prompt = f"""Analyze EVERY spending pattern below based on the provided evidence.
@@ -339,6 +350,8 @@ async def analyze_for_leaks(
             {
                 'id': p.id,
                 'merchant_hint': p.merchant_hint,
+                'dominant_level_1_tag': p.dominant_level_1_tag,
+                'dominant_level_2_tag': p.dominant_level_2_tag,
                 'dominant_level_3_tag': p.dominant_level_3_tag,
                 'level_3_confidence': p.level_3_confidence,
                 'txn_count': p.txn_count,

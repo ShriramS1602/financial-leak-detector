@@ -12,11 +12,13 @@ import {
     Calendar
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { ColumnMapperModal, ColumnMapping } from './ColumnMapperModal';
+import { extractFileHeaders, suggestColumnMapping } from '../utils/fileParser';
 
 export type DateRangeOption = '30_days' | '60_days' | '90_days' | '1_year';
 
 interface DataImportProps {
-    onFileUpload: (file: File) => void;
+    onFileUpload: (file: File, columnMapping?: Record<string, string>) => void;
     onEmailConnect: (tokenResponse: any, dateRange: DateRangeOption) => void;
     isLoading: boolean;
     isGoogleConfigured: boolean;
@@ -28,6 +30,16 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
     const [fileName, setFileName] = useState('');
     const [error, setError] = useState('');
     const [dateRange, setDateRange] = useState<DateRangeOption>('30_days');
+    
+    // Column mapper state
+    const [showColumnMapper, setShowColumnMapper] = useState(false);
+    const [fileColumns, setFileColumns] = useState<string[]>([]);
+    const [suggestedMapping, setSuggestedMapping] = useState<ColumnMapping | null>(null);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [columnMapping, setColumnMapping] = useState<ColumnMapping | null>(null);
+    const [isParsingFile, setIsParsingFile] = useState(false);
+
+    const REQUIRED_COLUMNS = ['Date', 'Narration', 'Withdrawal Amt.', 'Deposit Amt.'];
 
     const dateRangeOptions: { value: DateRangeOption; label: string }[] = [
         { value: '30_days', label: 'Last 30 Days' },
@@ -36,12 +48,58 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
         { value: '1_year', label: 'Last Year' },
     ];
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        setFileName(file.name);
+        
         setError('');
-        onFileUpload(file);
+        setFileName(file.name);
+        setSelectedFile(file);
+        setIsParsingFile(true);
+
+        try {
+            // Extract headers from file
+            const headers = await extractFileHeaders(file);
+            setFileColumns(headers);
+            
+            // Suggest mapping
+            const suggested = suggestColumnMapping(headers, REQUIRED_COLUMNS);
+            setSuggestedMapping(suggested);
+            
+            // Open column mapper modal
+            setShowColumnMapper(true);
+        } catch (err) {
+            setError(`Failed to read file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            setSelectedFile(null);
+            setFileName('');
+        } finally {
+            setIsParsingFile(false);
+        }
+    };
+
+    const handleColumnMappingConfirm = (mapping: ColumnMapping) => {
+        setColumnMapping(mapping);
+        setShowColumnMapper(false);
+        // Now upload the file with the mapping
+        if (selectedFile) {
+            // Convert ColumnMapping to the format expected by the API
+            const apiMapping: Record<string, string> = {};
+            Object.entries(mapping).forEach(([requiredCol, fileCol]) => {
+                if (fileCol) {
+                    apiMapping[requiredCol] = fileCol;
+                }
+            });
+            onFileUpload(selectedFile, apiMapping);
+        }
+    };
+
+    const handleColumnMappingCancel = () => {
+        setShowColumnMapper(false);
+        setSelectedFile(null);
+        setFileName('');
+        setFileColumns([]);
+        setSuggestedMapping(null);
+        setColumnMapping(null);
     };
 
     const handleEmailSync = async () => {
@@ -68,6 +126,15 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
 
     return (
         <div className="w-full max-w-4xl mx-auto">
+            {/* Column Mapper Modal */}
+            <ColumnMapperModal
+                isOpen={showColumnMapper}
+                fileColumns={fileColumns}
+                requiredColumns={REQUIRED_COLUMNS}
+                suggestedMapping={suggestedMapping || undefined}
+                onConfirm={handleColumnMappingConfirm}
+                onCancel={handleColumnMappingCancel}
+            />
             {/* Benefits Section */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
                 <div className="bg-white/5 backdrop-blur-sm rounded-xl p-4 border border-white/10">
@@ -141,22 +208,46 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
                                             <input
                                                 ref={fileInputRef}
                                                 type="file"
-                                                accept=".csv,.xlsx,.pdf"
+                                                accept=".csv,.xlsx,.xls"
                                                 onChange={handleFileChange}
                                                 className="hidden"
+                                                disabled={isLoading || isParsingFile}
                                             />
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     fileInputRef.current?.click();
                                                 }}
-                                                className="w-full py-3 px-4 bg-primary text-white rounded-lg font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
+                                                disabled={isLoading || isParsingFile}
+                                                className={cn(
+                                                    "w-full py-3 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors",
+                                                    isLoading || isParsingFile
+                                                        ? "bg-slate-700 text-slate-400 cursor-not-allowed"
+                                                        : "bg-primary text-white hover:bg-primary/90"
+                                                )}
                                             >
-                                                <Upload className="w-5 h-5" />
-                                                Select File
+                                                {isParsingFile ? (
+                                                    <>
+                                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                                        Reading file...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Upload className="w-5 h-5" />
+                                                        Select File
+                                                    </>
+                                                )}
                                             </button>
                                             {fileName && (
-                                                <p className="text-sm text-slate-400 text-center">{fileName}</p>
+                                                <div className="space-y-2">
+                                                    <p className="text-sm text-slate-400 text-center">{fileName}</p>
+                                                    {columnMapping && (
+                                                        <p className="text-xs text-success text-center flex items-center justify-center gap-1">
+                                                            <CheckCircle className="w-4 h-4" />
+                                                            Mapping confirmed
+                                                        </p>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
                                     )}

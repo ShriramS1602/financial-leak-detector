@@ -3,9 +3,10 @@ Transaction Upload API
 Endpoints for uploading and processing transaction files
 """
 
-from fastapi import APIRouter, UploadFile, File, Depends, status, HTTPException
+from fastapi import APIRouter, UploadFile, File, Depends, status, HTTPException, Form
 from sqlalchemy.orm import Session
 import logging
+import json
 
 from app.database import get_db
 from app.api.auth import get_current_user
@@ -23,6 +24,7 @@ router = APIRouter(
 @router.post("/upload", status_code=status.HTTP_200_OK)
 async def upload_transactions(
     file: UploadFile = File(...),
+    column_mapping: str = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -30,16 +32,32 @@ async def upload_transactions(
     Upload transaction file (CSV/Excel) and process for pattern detection
     
     - **file**: CSV or Excel file (.csv, .xlsx, .xls)
+    - **column_mapping**: Optional JSON string mapping file columns to expected columns
+      Example: {"Date": "date_field", "Narration": "desc_field", ...}
     - Returns: Upload statistics, detected patterns, and invalid rows
     """
     try:
         logger.info(f"Received transaction upload from user {current_user.id}")
         
+        # Parse column mapping if provided
+        column_mapping_dict = None
+        if column_mapping:
+            try:
+                column_mapping_dict = json.loads(column_mapping)
+                logger.info(f"Column mapping provided: {column_mapping_dict}")
+            except json.JSONDecodeError:
+                logger.error(f"Invalid column_mapping JSON: {column_mapping}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid column_mapping format. Must be valid JSON."
+                )
+        
         # Process the upload
         result = await TransactionUploadProcessor.process_upload(
             file=file,
             user_id=current_user.id,
-            db=db
+            db=db,
+            column_mapping=column_mapping_dict
         )
         
         # Handle errors

@@ -162,9 +162,14 @@ class ApiService {
     });
   }
 
-  async uploadCsv(file: File) {
+  async uploadCsv(file: File, columnMapping?: Record<string, string>) {
     const formData = new FormData();
     formData.append('file', file);
+    
+    // Add column mapping if provided
+    if (columnMapping) {
+      formData.append('column_mapping', JSON.stringify(columnMapping));
+    }
 
     const headers: Record<string, string> = {};
     if (this.token) {

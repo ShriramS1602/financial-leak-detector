@@ -58,6 +58,8 @@ class FileParser:
         """
         Parse CSV or Excel file and validate expected columns
         Returns: (dataframe, errors_list)
+        
+        Note: Does NOT validate columns exist yet (may be applied via column_mapping)
         """
         errors = []
         try:
@@ -71,13 +73,9 @@ class FileParser:
             else:  # .xlsx, .xls
                 df = pd.read_excel(io.BytesIO(content), sheet_name=0)  # Read first sheet
             
-            # Validate expected columns exist
-            missing_cols = [col for col in PatternConfig.EXPECTED_COLUMNS if col not in df.columns]
-            if missing_cols:
-                error_msg = f"Missing required columns: {missing_cols}. Expected: {PatternConfig.EXPECTED_COLUMNS}"
-                logger.error(error_msg)
-                errors.append({"error": error_msg})
-                return None, errors
+            # Note: We skip column validation here because:
+            # - If column_mapping is provided, columns will be renamed after parsing
+            # - Validation will happen after mapping is applied in process_upload()
             
             logger.info(f"Successfully parsed file with {len(df)} rows and columns: {df.columns.tolist()}")
             return df, errors
@@ -364,13 +362,31 @@ class TransactionEnricher:
 
     @staticmethod
     def extract_merchant_hint(narration: str) -> str:
-        """Extract merchant identity from narration"""
+        """Extract merchant identity from narration
+        
+        Strategy:
+        1. Count hyphens vs slashes in narration
+        2. Use the separator that appears more frequently
+        3. If equal, prefer hyphens (common in merchant names)
+        4. Filter noise tokens and rank by quality
+        """
         text = TransactionEnricher.normalize_text(narration)
         if not text:
             return "UNKNOWN"
 
-        # Split by hyphen (candidate generator)
-        tokens = [t.strip() for t in text.split("-") if t.strip()]
+        # Count separators to decide which one to use
+        hyphen_count = text.count("-")
+        slash_count = text.count("/")
+        
+        # Choose separator based on frequency
+        if slash_count > hyphen_count:
+            # More slashes → split by slash
+            tokens = [t.strip() for t in text.split("/") if t.strip()]
+            logger.debug(f"Using slash separator (slashes: {slash_count}, hyphens: {hyphen_count})")
+        else:
+            # More hyphens or equal → split by hyphen
+            tokens = [t.strip() for t in text.split("-") if t.strip()]
+            logger.debug(f"Using hyphen separator (hyphens: {hyphen_count}, slashes: {slash_count})")
 
         candidates = []
         for token in tokens:
@@ -383,6 +399,7 @@ class TransactionEnricher:
         # Prefer:
         # 1. tokens with spaces (human names / shop names)
         # 2. longer alphabetic tokens
+        # 3. longer overall tokens
         candidates.sort(
             key=lambda t: (
                 " " in t,
@@ -897,10 +914,18 @@ class TransactionUploadProcessor:
     async def process_upload(
         file,
         user_id: int,
-        db: Session
+        db: Session,
+        column_mapping: Optional[Dict[str, str]] = None
     ) -> Dict:
         """
         Main entry point: process entire file upload end-to-end
+        
+        Args:
+            file: Uploaded file object
+            user_id: User ID
+            db: Database session
+            column_mapping: Optional mapping of expected columns to actual file columns
+                Example: {"Date": "date_field", "Narration": "desc_field", ...}
         
         Returns: response dict with statistics and results
         """
@@ -929,6 +954,32 @@ class TransactionUploadProcessor:
             
             total_rows = len(df)
             logger.info(f"File parsed: {total_rows} rows")
+            
+            # ==================== STEP 2.5: APPLY COLUMN MAPPING ====================
+            # (Rename file columns to expected columns if mapping provided)
+            if column_mapping:
+                try:
+                    # Invert the mapping: {"Date": "date_field"} becomes {"date_field": "Date"}
+                    inverted_mapping = {v: k for k, v in column_mapping.items()}
+                    logger.info(f"Applying column mapping: {inverted_mapping}")
+                    df = df.rename(columns=inverted_mapping)
+                    logger.info(f"Column mapping applied successfully")
+                except Exception as e:
+                    logger.error(f"Error applying column mapping: {e}", exc_info=True)
+                    return {
+                        "status": "error",
+                        "detail": f"Failed to apply column mapping: {str(e)}"
+                    }
+            
+            # Validate expected columns exist (after mapping applied)
+            missing_cols = [col for col in PatternConfig.EXPECTED_COLUMNS if col not in df.columns]
+            if missing_cols:
+                error_msg = f"Missing required columns: {missing_cols}. Expected: {PatternConfig.EXPECTED_COLUMNS}"
+                logger.error(error_msg)
+                return {
+                    "status": "error",
+                    "detail": error_msg
+                }
             
             # ==================== STEP 3: CLEAN DATAFRAME ====================
             # (Normalize amounts, parse dates, remove rows with missing critical columns)
