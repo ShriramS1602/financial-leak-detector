@@ -131,8 +131,8 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitle }) =>
                                 <Activity className="h-6 w-6 text-indigo-300" />
                             </div>
                             <div>
-                                <h4 className="font-semibold text-lg">Real-time Monitoring</h4>
-                                <p className="text-indigo-200 text-sm">Track every penny as it moves.</p>
+                                <h4 className="font-semibold text-lg">Smart Leak Detection</h4>
+                                <p className="text-indigo-200 text-sm">Identify hidden subscriptions and recurring charges.</p>
                             </div>
                         </div>
 
@@ -151,8 +151,8 @@ const AuthLayout: React.FC<AuthLayoutProps> = ({ children, title, subtitle }) =>
                                 <ShieldCheck className="h-6 w-6 text-emerald-300" />
                             </div>
                             <div>
-                                <h4 className="font-semibold text-lg">Bank-Grade Security</h4>
-                                <p className="text-indigo-200 text-sm">Your financial data is encrypted and safe.</p>
+                                <h4 className="font-semibold text-lg">Secure Data Handling</h4>
+                                <p className="text-indigo-200 text-sm">Your financial data is processed securely.</p>
                             </div>
                         </div>
                     </div>

@@ -1,8 +1,7 @@
-import ReactMarkdown from 'react-markdown';
-import { ArrowLeft, DollarSign, Activity, Banknote, TrendingUp, ShieldAlert, AlertCircle, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, DollarSign, Activity, Banknote, TrendingUp, AlertCircle, X, ChevronDown, RotateCcw, ShieldAlert } from 'lucide-react';
 import { cn, formatCurrency, formatCurrencyDetailed } from '../lib/utils';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { useState, useEffect } from 'react';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
+import { useState } from 'react';
 
 interface DashboardProps {
     data: any;
@@ -12,8 +11,9 @@ interface DashboardProps {
 export function Dashboard({ data, onReset }: DashboardProps) {
     // Handle both old and new response formats
     const summary = data.statistics || { total_spend: 0, transaction_count: 0 };
-    const leaks = data.leaks || [];
-    const ai_insights = data.ai_insights || "No insights available.";
+    const leaks = (data.leaks || []).sort((a: any, b: any) =>
+        (b.leak_probability || 0) - (a.leak_probability || 0)
+    );
     const total_saving = data.total_estimated_annual_saving || 0;
 
     // Filter state - start with no filters selected
@@ -32,7 +32,7 @@ export function Dashboard({ data, onReset }: DashboardProps) {
 
     // Filter leaks based on selected categories
     const filteredLeaks = leaks.filter((leak: any) =>
-        selectedCategories.includes(leak.leak_category || 'Other')
+        selectedCategories.length === 0 || selectedCategories.includes(leak.leak_category || 'Other')
     );
 
     // Toggle category selection
@@ -44,13 +44,14 @@ export function Dashboard({ data, onReset }: DashboardProps) {
         );
     };
 
+    // Exclusive selection for chart click
+    const selectCategoryExclusive = (category: string) => {
+        setSelectedCategories([category]);
+    };
+
     // Select/deselect all
-    const toggleAll = () => {
-        if (selectedCategories.length === Object.keys(categoryMap).length) {
-            setSelectedCategories([]);
-        } else {
-            setSelectedCategories(Object.keys(categoryMap));
-        }
+    const selectAll = () => {
+        setSelectedCategories([]);
     };
 
     // Calculate confidence distribution
@@ -108,8 +109,10 @@ export function Dashboard({ data, onReset }: DashboardProps) {
             
             if (response.status === 401) {
                 console.error('Authentication failed (401). Token may be expired.');
-                setDetailsTransactions([]);
-                setLoadingDetails(false);
+                // Clear tokens and redirect to login
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('access_token');
+                window.location.href = '/login';
                 return;
             }
             
@@ -134,11 +137,11 @@ export function Dashboard({ data, onReset }: DashboardProps) {
                 const txnMerchant = t.merchant || t.merchant_hint || '';
                 const merchantLower = merchant.toLowerCase();
                 const txnMerchantLower = txnMerchant.toLowerCase();
-                
-                const matches = txnMerchantLower.includes(merchantLower) || 
-                       merchantLower.includes(txnMerchantLower) ||
-                       txnMerchantLower === merchantLower;
-                
+
+                const matches = txnMerchantLower.includes(merchantLower) ||
+                    merchantLower.includes(txnMerchantLower) ||
+                    txnMerchantLower === merchantLower;
+
                 if (matches) {
                     console.log('✓ Matched transaction:', txnMerchant);
                 }
@@ -205,11 +208,27 @@ export function Dashboard({ data, onReset }: DashboardProps) {
             {/* Leak Categories Breakdown - Donut Chart (Full Width) */}
             {leaks.length > 0 && (
                 <div className="bg-surface/50 backdrop-blur-sm border border-slate-700/50 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-slate-200 mb-6 flex items-center gap-2">
-                        <AlertCircle className="w-5 h-5 text-primary" />
-                        Leak Categories Breakdown (Click to filter)
-                    </h3>
-                    <LeakCategoryChart leaks={leaks} onCategoryClick={toggleCategory} />
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-xl font-bold text-slate-200 flex items-center gap-2">
+                            <AlertCircle className="w-5 h-5 text-primary" />
+                            Leak Categories Breakdown
+                        </h3>
+
+                        {selectedCategories.length > 0 && (
+                            <button
+                                onClick={selectAll}
+                                className="flex items-center gap-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-full transition-all border border-slate-700 animate-in fade-in zoom-in duration-200"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                Reset View
+                            </button>
+                        )}
+                    </div>
+                    <LeakCategoryChart
+                        leaks={leaks}
+                        onCategoryClick={selectCategoryExclusive}
+                        selectedCategory={selectedCategories.length > 0 ? selectedCategories[0] : null}
+                    />
                 </div>
             )}
 
@@ -291,20 +310,21 @@ export function Dashboard({ data, onReset }: DashboardProps) {
                     Detected Leaks ({filteredLeaks.length} of {leaks.length})
                 </h3>
 
-                {/* Category Filter Buttons */}
+                {/* Category Filter Buttons - Redesigned as scrollable pills */}
                 {leaks.length > 0 && (
                     <div className="mb-6 pb-4 border-b border-slate-700/50">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap gap-2 items-center">
+                            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mr-2">Filter by:</span>
                             <button
-                                onClick={toggleAll}
+                                onClick={selectAll}
                                 className={cn(
-                                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-                                    selectedCategories.length === Object.keys(categoryMap).length
-                                        ? "bg-primary/30 text-primary border border-primary/50"
-                                        : "bg-slate-700/30 text-slate-400 border border-slate-600/30 hover:border-slate-500"
+                                    "px-4 py-1.5 rounded-full text-xs font-bold transition-all shadow-sm border",
+                                    selectedCategories.length === 0
+                                        ? "bg-primary text-primary-foreground border-primary shadow-primary/25 shadow-md scale-105"
+                                        : "bg-slate-800/50 text-slate-400 border-slate-700 hover:border-slate-600 hover:bg-slate-800"
                                 )}
                             >
-                                All ({leaks.length})
+                                All
                             </button>
                             
                             {Object.entries(categoryMap).map(([category, count]) => {
@@ -320,14 +340,15 @@ export function Dashboard({ data, onReset }: DashboardProps) {
                                         key={category}
                                         onClick={() => toggleCategory(category)}
                                         className={cn(
-                                            "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1",
+                                            "px-4 py-1.5 rounded-full text-xs font-medium transition-all border flex items-center gap-1.5",
                                             isSelected
-                                                ? "bg-danger/30 text-danger border border-danger/50"
-                                                : "bg-slate-700/30 text-slate-400 border border-slate-600/30 hover:border-slate-500"
+                                                ? "bg-slate-100 text-slate-900 border-slate-200 shadow-md scale-105"
+                                                : "bg-slate-800/30 text-slate-400 border-slate-700/50 hover:bg-slate-800/50 hover:border-slate-600"
                                         )}
                                     >
-                                        {formatted} ({count as number})
-                                        {isSelected && <X className="w-3 h-3" />}
+                                        <div className={cn("w-1.5 h-1.5 rounded-full", isSelected ? "bg-primary" : "bg-slate-500")} />
+                                        {formatted}
+                                        <span className="opacity-50 text-[10px] ml-0.5">({count as number})</span>
                                     </button>
                                 );
                             })}
@@ -397,14 +418,17 @@ export function Dashboard({ data, onReset }: DashboardProps) {
                                             <div className="px-4 py-3 border-t border-slate-700/50 bg-slate-900/30">
                                                 <div className="grid grid-cols-2 gap-4">
                                                     <div>
-                                                        <p className="text-xs text-slate-500 font-medium mb-1">Leak Category</p>
-                                                        <p className="text-sm font-semibold text-slate-200 capitalize">
-                                                            {(leak.leak_category || 'Other')
-                                                                .replace(/_/g, ' ')
-                                                                .split(' ')
-                                                                .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
-                                                                .join(' ')}
-                                                        </p>
+                                                        <p className="text-xs text-slate-500 font-medium mb-2">Leak Category</p>
+                                                        <div className="inline-flex items-center px-3 py-1 rounded-full bg-gradient-to-r from-slate-800 to-slate-900 border border-slate-700/50 shadow-sm">
+                                                            <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2 animate-pulse"></div>
+                                                            <p className="text-sm font-bold text-slate-100 capitalize tracking-wide">
+                                                                {(leak.leak_category || 'Other')
+                                                                    .replace(/_/g, ' ')
+                                                                    .split(' ')
+                                                                    .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+                                                                    .join(' ')}
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                     <div>
                                                         <p className="text-xs text-slate-500 font-medium mb-1">Frequency</p>
@@ -633,9 +657,10 @@ function StatsCard({ title, value, icon, trend, color }: any) {
 interface LeakCategoryChartProps {
     leaks: any[];
     onCategoryClick?: (category: string) => void;
+    selectedCategory?: string | null;
 }
 
-function LeakCategoryChart({ leaks, onCategoryClick }: LeakCategoryChartProps) {
+function LeakCategoryChart({ leaks, onCategoryClick, selectedCategory }: LeakCategoryChartProps) {
     // Group leaks by category
     const categoryMap = leaks.reduce((acc: any, leak: any) => {
         const category = leak.leak_category || 'Other';
@@ -644,83 +669,161 @@ function LeakCategoryChart({ leaks, onCategoryClick }: LeakCategoryChartProps) {
     }, {});
 
     // Convert to chart data
-    const chartData = Object.entries(categoryMap).map(([name, value]) => {
-        // Format category name: replace underscores with spaces and capitalize each word
-        const formatted = name
-            .replace(/_/g, ' ')
-            .split(' ')
-            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ');
-        
-        return {
-            name: formatted,
-            originalName: name,
-            value: value as number,
-            percentage: ((value as number / leaks.length) * 100).toFixed(1),
-        };
-    });
+    const chartData = Object.entries(categoryMap)
+        .map(([name, value]) => {
+            // Format category name
+            const formatted = name
+                .replace(/_/g, ' ')
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
 
-    // Color palette for donut slices
-    const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899'];
+            return {
+                name: formatted,
+                originalName: name,
+                value: value as number,
+                percentage: ((value as number / leaks.length) * 100).toFixed(1),
+            };
+        })
+        .sort((a, b) => b.value - a.value); // Sort by count descending
+
+    // Calculate display stats for center of donut
+    const selectedData = selectedCategory ? chartData.find(d => d.originalName === selectedCategory) : null;
+    const centerCount = selectedData ? selectedData.value : leaks.length;
+    const centerLabel = selectedData ? selectedData.name : "Total Leaks";
+
+    // Extended Color palette
+    const COLORS = [
+        '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899',
+        '#06b6d4', '#14b8a6', '#f43f5e', '#6366f1', '#a855f7', '#d946ef'
+    ];
 
     return (
-        <div className="flex flex-col lg:flex-row gap-8 items-center justify-center">
-            {/* Donut Chart */}
-            <div className="w-full lg:w-1/2 h-[300px]">
+        <div className="flex flex-col lg:flex-row gap-8 items-start justify-center">
+            {/* Donut Chart - Fixed Width */}
+            <div className="w-full lg:w-5/12 h-[320px] relative flex-shrink-0">
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                         <Pie
                             data={chartData}
                             cx="50%"
                             cy="50%"
-                            innerRadius={70}
-                            outerRadius={110}
-                            paddingAngle={2}
+                            innerRadius={80}
+                            outerRadius={120}
+                            paddingAngle={3}
                             dataKey="value"
                             onClick={(entry: any) => {
                                 if (onCategoryClick && entry.payload.originalName) {
                                     onCategoryClick(entry.payload.originalName);
                                 }
                             }}
-                            style={{ cursor: 'pointer' }}
+                            style={{ cursor: 'pointer', outline: 'none' }}
+                            stroke="none"
                         >
                             {chartData.map((entry, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                <Cell
+                                    key={`cell-${index}`}
+                                    fill={COLORS[index % COLORS.length]}
+                                    className="transition-all duration-300"
+                                    opacity={selectedCategory && selectedCategory !== entry.originalName ? 0.3 : 1}
+                                />
                             ))}
                         </Pie>
                         <Tooltip
                             contentStyle={{
-                                backgroundColor: '#ffffff',
-                                color: '#000000',
-                                border: '1px solid #ccc',
+                                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                color: '#f8fafc',
+                                borderRadius: '12px',
+                                border: '1px solid rgba(51, 65, 85, 0.5)',
+                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)',
+                                padding: '12px'
                             }}
+                            itemStyle={{ color: '#fff' }}
+                            formatter={(value: any, name: any) => [`${value} leaks`, name]}
                         />
                     </PieChart>
                 </ResponsiveContainer>
+
+                {/* Center Stats */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none transition-all duration-300">
+                    <span
+                        key={centerCount} // Animate on change
+                        className="text-4xl font-bold text-white animate-in zoom-in-50 duration-300"
+                    >
+                        {centerCount}
+                    </span>
+                    <span className="text-xs text-slate-400 uppercase tracking-widest mt-1 text-center max-w-[120px] truncate px-2">
+                        {centerLabel}
+                    </span>
+                </div>
             </div>
 
-            {/* Legend with counts and percentages */}
-            <div className="w-full lg:w-1/2 space-y-3">
-                {chartData.map((item, index) => (
-                    <div
-                        key={index}
-                        className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-slate-700/50 hover:border-slate-600 transition-colors"
-                    >
-                        <div className="flex items-center gap-3">
-                            <div
-                                className="w-3 h-3 rounded-full flex-shrink-0"
-                                style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                            />
-                            <span className="text-slate-300 font-medium">{item.name}</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-right">
-                            <span className="text-slate-400 text-sm">{item.value}</span>
-                            <span className="text-slate-500 text-xs bg-slate-700/50 px-2 py-1 rounded">
-                                {item.percentage}%
-                            </span>
-                        </div>
-                    </div>
-                ))}
+            {/* Legend - Grid (No Scroll) */}
+            <div className="w-full lg:w-7/12">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {chartData.map((item, index) => {
+                        const color = COLORS[index % COLORS.length];
+                        const isSelected = selectedCategory === item.originalName;
+                        const isDimmed = selectedCategory && !isSelected;
+
+                        return (
+                            <button
+                                key={index}
+                                onClick={() => onCategoryClick && onCategoryClick(item.originalName)}
+                                className={cn(
+                                    "group flex flex-col p-3 rounded-xl border transition-all duration-300 text-left relative overflow-hidden",
+                                    isSelected
+                                        ? "bg-slate-800 border-primary shadow-lg shadow-primary/10 scale-[1.02]"
+                                        : "bg-slate-800/30 border-slate-700/30 hover:bg-slate-800 hover:border-slate-600",
+                                    isDimmed ? "opacity-50 hover:opacity-100" : "opacity-100"
+                                )}
+                            >
+                                <div className="flex items-center justify-between w-full mb-2">
+                                    <div className="flex items-center gap-2.5 truncate pr-2">
+                                        <div
+                                            className="w-2.5 h-2.5 rounded-full flex-shrink-0 shadow-[0_0_8px] transition-shadow duration-300"
+                                            style={{
+                                                backgroundColor: color,
+                                                boxShadow: `0 0 8px ${color}`
+                                            }}
+                                        />
+                                        <span className={cn(
+                                            "font-medium text-sm truncate transition-colors",
+                                            isSelected ? "text-white" : "text-slate-200 group-hover:text-white"
+                                        )}>
+                                            {item.name}
+                                        </span>
+                                    </div>
+                                    <span className={cn(
+                                        "text-xs font-mono px-1.5 py-0.5 rounded transition-colors",
+                                        isSelected ? "bg-primary/20 text-primary-300" : "bg-slate-900/50 text-slate-400"
+                                    )}>
+                                        {item.percentage}%
+                                    </span>
+                                </div>
+
+                                <div className="flex items-end justify-between w-full">
+                                    <span className="text-xs text-slate-500 group-hover:text-slate-400 transition-colors">
+                                        {item.value} {item.value === 1 ? 'leak' : 'leaks'}
+                                    </span>
+                                </div>
+
+                                {/* Progress Bar Background */}
+                                <div className="absolute bottom-0 left-0 w-full h-1 bg-slate-700/30">
+                                    {/* Active Progress */}
+                                    <div
+                                        className="h-full transition-all duration-500 ease-out"
+                                        style={{
+                                            width: `${item.percentage}%`,
+                                            backgroundColor: color,
+                                            opacity: isSelected ? 1 : 0.7
+                                        }}
+                                    />
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );

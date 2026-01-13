@@ -14,7 +14,7 @@ from jose import JWTError, jwt
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+import bcrypt
 from app.models import User
 from app.schema import UserCreate, UserResponse, Token
 from app.database import get_db
@@ -54,8 +54,6 @@ SCOPES = [
     'https://www.googleapis.com/auth/userinfo.email',
     'https://www.googleapis.com/auth/userinfo.profile',
 ]
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 # ==================== PYDANTIC MODELS ====================
@@ -258,12 +256,21 @@ def verify_token(token: str, expected_type: str) -> Optional[str]:
         return None
 
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against a hash using bcrypt"""
+    if isinstance(plain_password, str):
+        plain_password = plain_password.encode('utf-8')
+    if isinstance(hashed_password, str):
+        hashed_password = hashed_password.encode('utf-8')
+    
+    return bcrypt.checkpw(plain_password, hashed_password)
 
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def get_password_hash(password: str) -> str:
+    """Hash a password using bcrypt"""
+    if isinstance(password, str):
+        password = password.encode('utf-8')
+    return bcrypt.hashpw(password, bcrypt.gensalt()).decode('utf-8')
 
 
 def get_google_flow() -> Flow:

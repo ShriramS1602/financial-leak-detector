@@ -30,7 +30,7 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
     const [fileName, setFileName] = useState('');
     const [error, setError] = useState('');
     const [dateRange, setDateRange] = useState<DateRangeOption>('30_days');
-    
+
     // Column mapper state
     const [showColumnMapper, setShowColumnMapper] = useState(false);
     const [fileColumns, setFileColumns] = useState<string[]>([]);
@@ -51,7 +51,7 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
+
         setError('');
         setFileName(file.name);
         setSelectedFile(file);
@@ -61,11 +61,11 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
             // Extract headers from file
             const headers = await extractFileHeaders(file);
             setFileColumns(headers);
-            
+
             // Suggest mapping
             const suggested = suggestColumnMapping(headers, REQUIRED_COLUMNS);
             setSuggestedMapping(suggested);
-            
+
             // Open column mapper modal
             setShowColumnMapper(true);
         } catch (err) {
@@ -200,7 +200,7 @@ export function DataImport({ onFileUpload, onEmailConnect: _onEmailConnect, isLo
                                 <div className="flex-1">
                                     <h3 className="text-white font-semibold mb-1">Upload Statement</h3>
                                     <p className="text-slate-400 text-sm mb-4">
-                                        Upload your bank statement (CSV, Excel, or PDF)
+                                        Upload your bank statement (CSV, Excel)
                                     </p>
 
                                     {selectedMethod === 'csv' && (

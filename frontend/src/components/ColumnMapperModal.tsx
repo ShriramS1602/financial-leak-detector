@@ -1,9 +1,98 @@
-import { useState, useEffect } from 'react';
-import { AlertCircle, CheckCircle2, X, Lightbulb } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { AlertCircle, CheckCircle2, X, Lightbulb, ChevronDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export interface ColumnMapping {
   [key: string]: string | null; // requiredColumn: fileColumn
+}
+
+interface CustomDropdownProps {
+  value: string | null;
+  onChange: (value: string | null) => void;
+  options: string[];
+  placeholder: string;
+  isMapped: boolean;
+  disabled?: boolean;
+}
+
+function CustomDropdown({
+  value,
+  onChange,
+  options,
+  placeholder,
+  isMapped,
+  disabled = false,
+}: CustomDropdownProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={dropdownRef} className="relative">
+      <button
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={cn(
+          'w-full px-4 py-2.5 rounded-lg border transition-all text-sm flex items-center justify-between',
+          'focus:outline-none focus:ring-2 focus:ring-primary/50',
+          isMapped
+            ? 'border-primary/50 bg-primary/5'
+            : 'border-slate-600/50 hover:border-slate-500/50 bg-slate-900/50',
+          'text-slate-200',
+          disabled && 'opacity-50 cursor-not-allowed'
+        )}
+      >
+        <span className={value ? 'text-slate-200' : 'text-slate-500'}>
+          {value || placeholder}
+        </span>
+        <ChevronDown
+          className={cn(
+            'w-4 h-4 transition-transform',
+            isOpen ? 'rotate-180' : '',
+            'text-slate-400'
+          )}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 mt-2 bg-slate-900 border border-slate-600/50 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
+          <div className="p-1">
+            {options.length === 0 ? (
+              <div className="px-4 py-2 text-sm text-slate-400">No options available</div>
+            ) : (
+              options.map((option) => (
+                <button
+                  key={option}
+                  onClick={() => {
+                    onChange(option);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    'w-full text-left px-4 py-2 rounded text-sm transition-colors',
+                    value === option
+                      ? 'bg-primary/20 text-primary font-medium'
+                      : 'text-slate-200 hover:bg-slate-800'
+                  )}
+                >
+                  {option}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface ColumnMapperModalProps {
@@ -147,25 +236,13 @@ export function ColumnMapperModal({
                     </label>
                   </div>
 
-                  <select
-                    value={currentMapping || ''}
-                    onChange={(e) => handleMappingChange(requiredCol, e.target.value || null)}
-                    className={cn(
-                      'w-full px-4 py-2.5 rounded-lg border transition-all text-sm',
-                      'bg-slate-900/50 text-slate-200 placeholder-slate-500',
-                      'focus:outline-none focus:ring-2 focus:ring-primary/50',
-                      isMapped
-                        ? 'border-primary/50 bg-primary/5'
-                        : 'border-slate-600/50 hover:border-slate-500/50'
-                    )}
-                  >
-                    <option value="">Select a column...</option>
-                    {availableColumns.map((fileCol, idx) => (
-                      <option key={idx} value={fileCol}>
-                        {fileCol}
-                      </option>
-                    ))}
-                  </select>
+                  <CustomDropdown
+                    value={currentMapping}
+                    onChange={(value) => handleMappingChange(requiredCol, value)}
+                    options={availableColumns}
+                    placeholder="Select a column..."
+                    isMapped={isMapped}
+                  />
 
                   {isMapped && (
                     <div className="mt-2 flex items-center gap-2 text-xs text-success">
