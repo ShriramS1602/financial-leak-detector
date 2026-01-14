@@ -559,7 +559,8 @@ class PatternAggregator:
         gap_max_days = max(date_gaps) if date_gaps else 0.0
         
         # Recency: days since last transaction
-        last_txn_days_ago = (datetime.now() - last_date).days
+        # FIX #1: Prevent negative recency (clamp to 0 if transaction is in future)
+        last_txn_days_ago = max(0, (datetime.now() - last_date).days)
         
         # Amount statistics
         # Determine which amount column to use (withdrawal or deposit)
@@ -579,7 +580,8 @@ class PatternAggregator:
         
         total_amount = sum(amounts) if amounts else 0.0
         avg_amount = np.mean(amounts) if amounts else 0.0
-        amount_std = np.std(amounts) if amounts else 0.0
+        # FIX #2: Use sample standard deviation (ddof=1) for more accurate variability
+        amount_std = np.std(amounts, ddof=1) if amounts else 0.0
         amount_min = min(amounts) if amounts else 0.0
         amount_max = max(amounts) if amounts else 0.0
         
@@ -591,7 +593,8 @@ class PatternAggregator:
         
         dominant_level_1_tag = 'UNKNOWN'
         if level_1_counts:
-            dominant_level_1_tag = max(level_1_counts, key=level_1_counts.get)
+            # FIX #3a: Use secondary sorting (alphabetical) for deterministic tie-breaking
+            dominant_level_1_tag = max(level_1_counts, key=lambda tag: (level_1_counts[tag], tag))
         level_1_confidence = (level_1_counts.get(dominant_level_1_tag, 0) / txn_count) if txn_count > 0 else 0.0
         
         # Level-2 tag distribution
@@ -602,7 +605,8 @@ class PatternAggregator:
         
         dominant_level_2_tag = 'UNKNOWN'
         if level_2_counts:
-            dominant_level_2_tag = max(level_2_counts, key=level_2_counts.get)
+            # FIX #3b: Use secondary sorting (alphabetical) for deterministic tie-breaking
+            dominant_level_2_tag = max(level_2_counts, key=lambda tag: (level_2_counts[tag], tag))
         level_2_confidence = (level_2_counts.get(dominant_level_2_tag, 0) / txn_count) if txn_count > 0 else 0.0
         
         # Level-3 tag distribution
@@ -614,7 +618,8 @@ class PatternAggregator:
         # Find dominant level_3_tag
         dominant_level_3_tag = 'UNKNOWN'
         if level_3_counts:
-            dominant_level_3_tag = max(level_3_counts, key=level_3_counts.get)
+            # FIX #3c: Use secondary sorting (alphabetical) for deterministic tie-breaking
+            dominant_level_3_tag = max(level_3_counts, key=lambda tag: (level_3_counts[tag], tag))
         
         # Confidence: proportion of transactions with dominant tag
         level_3_confidence = (level_3_counts.get(dominant_level_3_tag, 0) / txn_count) if txn_count > 0 else 0.0
